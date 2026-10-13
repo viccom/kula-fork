@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -21,6 +22,15 @@ type Provider struct {
 	proc   string
 	sys    string
 	cached *Snapshot
+
+	// Process/connection monitor state. These scans are heavier than the
+	// inventory sweep and are only driven by the monitor pages, so they keep
+	// their own lock and cache instead of riding along with the snapshot.
+	procMu       sync.Mutex
+	procTable    *procTable
+	prevJiffies  map[int]uint64
+	prevJiffiesT time.Time
+	uidNames     map[uint32]string
 }
 
 func New() *Provider { return &Provider{proc: "/proc", sys: "/sys"} }
@@ -118,6 +128,15 @@ func (p *Provider) discover(sample *collector.Sample, osName, kernel, arch, host
 		for _, gpu := range sample.GPU {
 			s.Live.GPU = append(s.Live.GPU, LiveGPU{Name: gpu.Name, Driver: gpu.Driver})
 		}
+		for _, fs := range sample.Disks.FileSystems {
+			s.Live.FileSystems = append(s.Live.FileSystems, LiveFilesystem{
+				Mount: fs.MountPoint, Type: fs.FSType,
+				Total: fs.Total, Used: fs.Used, Available: fs.Available, UsedPct: fs.UsedPct,
+			})
+		}
+		sort.Slice(s.Live.FileSystems, func(i, j int) bool {
+			return s.Live.FileSystems[i].Mount < s.Live.FileSystems[j].Mount
+		})
 	}
 	return s
 }

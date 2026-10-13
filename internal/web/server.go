@@ -382,6 +382,8 @@ func (s *Server) buildHandler() http.Handler {
 	apiMux := http.NewServeMux()
 	apiMux.HandleFunc("/api/current", s.handleCurrent)
 	apiMux.HandleFunc("/api/system-info", s.handleSystemInfo)
+	apiMux.HandleFunc("/api/processes", s.handleProcesses)
+	apiMux.HandleFunc("/api/connections", s.handleConnections)
 	apiMux.HandleFunc("/api/history", s.handleHistory)
 	apiMux.HandleFunc("/api/config", s.handleConfig)
 	apiMux.HandleFunc("/api/login", s.handleLogin)

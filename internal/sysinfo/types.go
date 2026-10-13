@@ -31,6 +31,68 @@ type Live struct {
 	CPU     LiveCPU     `json:"cpu"`
 	Hottest *LiveSensor `json:"hottest,omitempty"`
 	GPU     []LiveGPU   `json:"gpu,omitempty"`
+	// FileSystems carries the per-mount capacity measured by the regular
+	// collector. It stays in the live section (rather than the gated hardware
+	// detail sections) so the dashboard can show disk usage without exposing
+	// the rest of the host inventory.
+	FileSystems []LiveFilesystem `json:"filesystems,omitempty"`
+}
+
+// LiveFilesystem is one mounted filesystem's capacity as measured by the
+// latest sample: the mount point, its type and the used/total/available
+// figures. The backing device is deliberately omitted so the live section
+// keeps the details-off promise (no host inventory survives), while still
+// answering the operator's "how full is each disk" question.
+type LiveFilesystem struct {
+	Mount     string  `json:"mount"`
+	Type      string  `json:"type,omitempty"`
+	Total     uint64  `json:"total"`
+	Used      uint64  `json:"used"`
+	Available uint64  `json:"available"`
+	UsedPct   float64 `json:"used_pct"`
+}
+
+// ProcessInfo describes one process read from /proc. It is collected on
+// demand for the process monitor page, never stored in metric history.
+type ProcessInfo struct {
+	PID     int     `json:"pid"`
+	PPID    int     `json:"ppid"`
+	Name    string  `json:"name"`
+	User    string  `json:"user,omitempty"`
+	State   string  `json:"state"`
+	Threads int     `json:"threads"`
+	CPUPct  float64 `json:"cpu_pct"`
+	MemRSS  uint64  `json:"mem_rss"`
+	FDs     int     `json:"fds"`
+	Sockets int     `json:"sockets"`
+	Started int64   `json:"started,omitempty"` // unix seconds, 0 when unknown
+}
+
+// ProcessList is the process monitor payload.
+type ProcessList struct {
+	Timestamp time.Time     `json:"ts"`
+	Total     int           `json:"total"`
+	Processes []ProcessInfo `json:"processes"`
+}
+
+// Connection describes one socket from /proc/net. Local and remote addresses
+// are kept as strings so IPv4 and IPv6 share one shape; ports are separate so
+// the interface can filter and sort numerically.
+type Connection struct {
+	Proto      string `json:"proto"`
+	LocalAddr  string `json:"local_addr"`
+	LocalPort  int    `json:"local_port"`
+	RemoteAddr string `json:"remote_addr"`
+	RemotePort int    `json:"remote_port"`
+	State      string `json:"state"`
+	PID        int    `json:"pid,omitempty"`
+	Process    string `json:"process,omitempty"`
+}
+
+// ConnectionList is the network monitor payload.
+type ConnectionList struct {
+	Timestamp   time.Time    `json:"ts"`
+	Connections []Connection `json:"connections"`
 }
 
 type LiveMemory struct {

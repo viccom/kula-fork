@@ -18,6 +18,8 @@ import {
 } from './charts-data.js';
 import { toggleAlertDropdown } from './alerts.js';
 import { initSystemInfo } from './system-info.js';
+import { initProcesses } from './processes.js';
+import { initConnections } from './connections.js';
 import {
     syncPauseState,
     togglePause,
@@ -415,6 +417,8 @@ async function init() {
     document.getElementById('btn-layout').addEventListener('click', toggleLayout);
     document.getElementById('btn-alerts').addEventListener('click', toggleAlertDropdown);
     initSystemInfo();
+    initProcesses();
+    initConnections();
     document.getElementById('btn-time-menu').addEventListener('click', (e) => {
         e.stopPropagation();
         const list = document.getElementById('time-presets-list');

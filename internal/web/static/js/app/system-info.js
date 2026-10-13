@@ -366,6 +366,58 @@ function overview(data, grid) {
         );
     }
     grid.append(summaries);
+    diskUsage(data, grid);
+}
+
+/* ------------------------------------------------------------------- disks */
+
+// diskUsage shows one capacity card per mounted filesystem from the live
+// sample. It is deliberately part of the overview and independent of
+// global.show_system_details: the operator asked for "how full is each disk"
+// without exposing the rest of the host inventory. The backing device is not
+// carried by the live payload, so only the mount point and its capacity appear.
+function diskUsage(data, grid) {
+    const filesystems = data.live?.filesystems || [];
+    if (!filesystems.length) return;
+    // Bind mounts of one filesystem repeat the same capacity at several paths;
+    // the operator wants one card per disk, so identical capacities collapse to
+    // one card and the largest disks come first. The representative path avoids
+    // dot-named and old-root mounts, which are container/previous-boot artefacts.
+    const rank = fs => {
+        const mount = String(fs.mount || '');
+        return mount.length +
+            (mount.startsWith('/.') ? 100 : 0) +
+            (mount.includes('/.oldroot') ? 100 : 0);
+    };
+    const byCapacity = new Map();
+    for (const filesystem of filesystems) {
+        const key = `${filesystem.total}:${filesystem.used}:${filesystem.available}`;
+        const existing = byCapacity.get(key);
+        if (!existing || rank(filesystem) < rank(existing)) byCapacity.set(key, filesystem);
+    }
+    const disks = [...byCapacity.values()].sort((a, b) => (b.total || 0) - (a.total || 0)).slice(0, 16);
+    const section = node('section', 'system-info-disk-usage system-info-wide');
+    section.append(heading('h3', label('disk_usage'), 'storage', label('disk_usage_intro')));
+    const cards = node('div', 'system-info-disk-cards');
+    for (const filesystem of disks) {
+        const item = node('article', 'system-info-disk-card');
+        const head = node('div', 'system-info-disk-head');
+        const mount = code(filesystem.mount || label('unknown_mount'));
+        mount.dataset.copy = filesystem.mount || '';
+        mount.title = label('copy_value');
+        head.append(mount);
+        if (present(filesystem.type)) head.append(node('span', 'system-info-fs-type', filesystem.type));
+        item.append(head);
+        item.append(usageMeter({
+            total: filesystem.total, used: filesystem.used,
+            available: filesystem.available, used_pct: filesystem.used_pct,
+        }));
+        item.append(node('p', 'system-info-disk-total',
+            `${bytes(filesystem.used)} / ${bytes(filesystem.total)}`));
+        cards.append(item);
+    }
+    section.append(cards);
+    grid.append(section);
 }
 
 /* ----------------------------------------------------------------- storage */

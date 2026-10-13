@@ -37,6 +37,9 @@
     <link rel="modulepreload" href="js/app/charts-data.js" integrity="{{sri `js/app/charts-data.js`}}" nonce="{{.Nonce}}" crossorigin="anonymous">
     <link rel="modulepreload" href="js/app/header.js" integrity="{{sri `js/app/header.js`}}" nonce="{{.Nonce}}" crossorigin="anonymous">
     <link rel="modulepreload" href="js/app/system-info.js" integrity="{{sri `js/app/system-info.js`}}" nonce="{{.Nonce}}" crossorigin="anonymous">
+    <link rel="modulepreload" href="js/app/monitor.js" integrity="{{sri `js/app/monitor.js`}}" nonce="{{.Nonce}}" crossorigin="anonymous">
+    <link rel="modulepreload" href="js/app/processes.js" integrity="{{sri `js/app/processes.js`}}" nonce="{{.Nonce}}" crossorigin="anonymous">
+    <link rel="modulepreload" href="js/app/connections.js" integrity="{{sri `js/app/connections.js`}}" nonce="{{.Nonce}}" crossorigin="anonymous">
     <link rel="modulepreload" href="js/app/gauges.js" integrity="{{sri `js/app/gauges.js`}}" nonce="{{.Nonce}}" crossorigin="anonymous">
     <link rel="modulepreload" href="js/app/alerts.js" integrity="{{sri `js/app/alerts.js`}}" nonce="{{.Nonce}}" crossorigin="anonymous">
     <link rel="modulepreload" href="js/app/websocket.js" integrity="{{sri `js/app/websocket.js`}}" nonce="{{.Nonce}}" crossorigin="anonymous">
@@ -107,6 +110,14 @@
                 <button id="btn-info" class="btn-icon btn-info" data-i18n-title="system_info"
                     data-i18n-aria-label="system_info" title="System Info" aria-controls="system-info-page"
                     aria-expanded="false" aria-label="System Info"><span aria-hidden="true">📡</span></button>
+                <!-- Process monitor -->
+                <button id="btn-processes" class="btn-icon btn-monitor" data-i18n-title="processes_monitor"
+                    data-i18n-aria-label="processes_monitor" title="Process Monitor" aria-controls="processes-page"
+                    aria-expanded="false" aria-label="Process Monitor"><span aria-hidden="true">📋</span></button>
+                <!-- Network monitor -->
+                <button id="btn-connections" class="btn-icon btn-monitor" data-i18n-title="network_monitor"
+                    data-i18n-aria-label="network_monitor" title="Network Monitor" aria-controls="connections-page"
+                    aria-expanded="false" aria-label="Network Monitor"><span aria-hidden="true">🔌</span></button>
                 <!-- Alert bell -->
                 <div class="alert-container" id="alert-container">
                     <button id="btn-alerts" class="btn-icon btn-alert" data-i18n-title="alerts" title="Alerts">
@@ -646,6 +657,52 @@
                 <nav id="system-info-tabs" class="system-info-tabs" role="tablist"
                     data-i18n-aria-label="si_sections" aria-label="System information sections"></nav>
                 <div id="system-info-content" class="system-info-content" role="tabpanel" tabindex="0"></div>
+            </div>
+        </main>
+
+        <main id="processes-page" class="monitor-page hidden" aria-labelledby="processes-title">
+            <div class="monitor-shell">
+                <h2 id="processes-title" class="sr-only" tabindex="-1" data-i18n="processes_monitor">Process Monitor</h2>
+                <div class="monitor-toolbar">
+                    <button id="processes-back" class="monitor-back" type="button">
+                        <span aria-hidden="true">←</span>
+                        <span data-i18n="si_back_dashboard">Back to dashboard</span>
+                    </button>
+                    <div class="monitor-update">
+                        <span id="processes-status" class="monitor-status" role="status"></span>
+                        <button id="processes-refresh" class="monitor-refresh" type="button">
+                            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                <path d="M20 11a8.1 8.1 0 0 0-15.5-2M4 4v5h5M4 13a8.1 8.1 0 0 0 15.5 2M20 20v-5h-5"></path>
+                            </svg>
+                            <span data-i18n="si_refresh_now">Refresh now</span>
+                        </button>
+                    </div>
+                </div>
+                <div id="processes-filters" class="monitor-filters"></div>
+                <div id="processes-content" class="monitor-content"></div>
+            </div>
+        </main>
+
+        <main id="connections-page" class="monitor-page hidden" aria-labelledby="connections-title">
+            <div class="monitor-shell">
+                <h2 id="connections-title" class="sr-only" tabindex="-1" data-i18n="network_monitor">Network Monitor</h2>
+                <div class="monitor-toolbar">
+                    <button id="connections-back" class="monitor-back" type="button">
+                        <span aria-hidden="true">←</span>
+                        <span data-i18n="si_back_dashboard">Back to dashboard</span>
+                    </button>
+                    <div class="monitor-update">
+                        <span id="connections-status" class="monitor-status" role="status"></span>
+                        <button id="connections-refresh" class="monitor-refresh" type="button">
+                            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                <path d="M20 11a8.1 8.1 0 0 0-15.5-2M4 4v5h5M4 13a8.1 8.1 0 0 0 15.5 2M20 20v-5h-5"></path>
+                            </svg>
+                            <span data-i18n="si_refresh_now">Refresh now</span>
+                        </button>
+                    </div>
+                </div>
+                <div id="connections-filters" class="monitor-filters"></div>
+                <div id="connections-content" class="monitor-content"></div>
             </div>
         </main>
     </div>
