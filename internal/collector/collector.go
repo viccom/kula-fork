@@ -28,13 +28,22 @@ type Collector struct {
 	prevNet      map[string]netRaw
 	prevDisk     map[string]diskRaw
 	diskWarnings map[string]bool
-	prevSelf     selfRaw
-	prevTCP      tcpRaw
-	prevEnergy   map[string]uint64 // for Intel energy derivation
-	gpus         []GPUInfo
-	storageDir   string
-	prevTime     time.Time
-	debugDone    bool // set after the first Collect(); suppresses repeated debug logs
+	diskIDCache  map[string]diskIdentity // cached disk identities keyed by kernel name
+	diskIDNext   map[string]diskIdentity // write buffer swapped into diskIDCache each tick
+	// Per-tick scratch maps, cleared and reused to keep the collector's
+	// steady-state allocations flat on hosts with many block devices.
+	diskParents map[string]diskParent
+	diskPaths   map[string]string
+	diskParts   map[string]string
+	diskCounts  map[string]int
+	diskResult  map[string]diskRaw
+	prevSelf    selfRaw
+	prevTCP     tcpRaw
+	prevEnergy  map[string]uint64 // for Intel energy derivation
+	gpus        []GPUInfo
+	storageDir  string
+	prevTime    time.Time
+	debugDone   bool // set after the first Collect(); suppresses repeated debug logs
 
 	// Application monitoring state
 	nginxClient   *http.Client

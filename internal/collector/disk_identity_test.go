@@ -215,3 +215,18 @@ func TestListDisksEmptyAndReadErrors(t *testing.T) {
 		t.Fatal("scanner error returned a partial disk list as complete")
 	}
 }
+
+func TestDiskIdentityCacheSurvivesRebuild(t *testing.T) {
+	c := diskTestEnvironment(t)
+	diskTestFile(t, sysPath, "class/block/sda/device/serial", "A")
+	diskTestFile(t, sysPath, "class/block/sda/diskseq", "7")
+	diskTestFile(t, procPath, "diskstats", diskStatsLine("sda", 10))
+	c.parseDiskStats()
+	if cached, ok := c.diskIDCache["sda"]; !ok || cached.baseID != "serial:||A" || cached.fpKind != fpDiskseq || cached.fpVal != "7" {
+		t.Fatalf("first tick did not cache identity: %+v", c.diskIDCache)
+	}
+	c.parseDiskStats() // second tick: the cache is rebuilt; entries must survive
+	if cached, ok := c.diskIDCache["sda"]; !ok || cached.baseID != "serial:||A" {
+		t.Fatalf("cache entry lost on per-tick rebuild (identity cache never engages): %+v", c.diskIDCache)
+	}
+}

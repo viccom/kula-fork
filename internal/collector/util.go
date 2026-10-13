@@ -5,6 +5,17 @@ import (
 	"strconv"
 )
 
+// reuseMap clears and returns a per-collector scratch map, allocating it on
+// first use. Reusing the buckets avoids re-growing maps with a thousand-plus
+// entries on every 1s tick, which otherwise keeps the GC at a high water mark.
+func reuseMap[K comparable, V any](m *map[K]V) map[K]V {
+	if *m == nil {
+		*m = make(map[K]V)
+	}
+	clear(*m)
+	return *m
+}
+
 // round2 rounds a float to 2 decimal places
 func round2(v float64) float64 {
 	return math.Round(v*100) / 100

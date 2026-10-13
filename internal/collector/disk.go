@@ -49,7 +49,7 @@ func (c *Collector) readDiskStats(includePartitions bool) (map[string]diskRaw, e
 	// Only construct device-name strings for log lines when debug output is
 	// actually on this tick; the steady-state path stays allocation-light.
 	dbg := c.collCfg.DebugLog && !c.debugDone
-	result := make(map[string]diskRaw)
+	result := reuseMap(&c.diskResult)
 	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {
 		line := scanner.Bytes()

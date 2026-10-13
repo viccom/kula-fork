@@ -3,6 +3,7 @@ package collector
 import (
 	"log"
 	"net/url"
+	"os"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -56,16 +57,117 @@ func (c *Collector) warnDiskOnce(key, format string, args ...any) {
 	}
 }
 
-// Disk identities are refreshed each tick, including unselected devices, so a
-// hotplug/replacement or duplicate identifier cannot leave a stale name mapping.
+// Fingerprint kinds for cached disk identities. An absent or empty serial
+// shares fpNoSerial with a missing one: the identity-relevant payload ("" ) is
+// identical, and a serial later gaining a value flips the kind to fpSerial.
+const (
+	fpNone     uint8 = 0
+	fpDiskseq  uint8 = 1
+	fpSerial   uint8 = 2
+	fpNoSerial uint8 = 3
+)
+
+// fpBufSize is large enough for any diskseq or serial sysfs value in a single
+// read; sysfs reports these files as 4096 bytes regardless of their content,
+// which is why reading them through os.ReadFile would allocate a fresh 4 KiB
+// buffer per device per tick.
+const fpBufSize = 512
+
+// diskIdentity caches one device's resolved identity so unchanged disks can
+// skip the full sysfs re-resolution on subsequent ticks.
+type diskIdentity struct {
+	fpKind   uint8  // fingerprint kind (fpDiskseq / fpSerial / fpNoSerial)
+	fpVal    string // fingerprint payload as read ("" for fpNoSerial)
+	baseID   string // raw resolved identity, before duplicate handling and :part suffix
+	part     string // partition number suffix ("" for whole disks)
+	basePath string // resolved sysfs directory the identity was resolved from
+}
+
+// readSysfsInto reads one sysfs file into buf and returns the trimmed payload
+// as a sub-slice of buf, allocating nothing. ok is false when the file cannot
+// be read or is empty. sysfs single-value files always fit one read.
+func readSysfsInto(path string, buf []byte) ([]byte, bool) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, false
+	}
+	n, err := f.Read(buf)
+	_ = f.Close()
+	if err != nil && n == 0 {
+		return nil, false
+	}
+	for n > 0 && (buf[n-1] == '\n' || buf[n-1] == ' ' || buf[n-1] == '\t' || buf[n-1] == '\r') {
+		n--
+	}
+	return buf[:n], true
+}
+
+// diskFingerprintBuf computes the per-tick change signal for a block device.
+// The kernel's diskseq (a monotonic sequence that changes whenever the
+// underlying disk is replaced) is preferred; devices without a usable one
+// (e.g. an unconnected nbd exposes an empty diskseq file) fall back to
+// device/serial, where the attribute's presence, absence, or content is itself
+// a stable signal that any identity change invalidates. Steady-state ticks
+// allocate nothing: the payload is returned as a sub-slice of buf.
+func diskFingerprintBuf(dir string, buf []byte) (uint8, []byte) {
+	if v, ok := readSysfsInto(filepath.Join(dir, "diskseq"), buf); ok && len(v) > 0 {
+		return fpDiskseq, v
+	}
+	if v, ok := readSysfsInto(filepath.Join(dir, "device", "serial"), buf); ok && len(v) > 0 {
+		return fpSerial, v
+	}
+	if _, err := os.Stat(filepath.Join(dir, "device", "serial")); err == nil {
+		return fpNoSerial, nil // present but empty
+	}
+	return fpNoSerial, nil
+}
+
+// diskParent is one resolved parent-disk identity shared by the disk and its
+// partitions in identifyDisks' per-tick duplicate detection.
+type diskParent struct{ id, seq string }
+
+// Disk identities follow their device: the fingerprint changes whenever the
+// underlying disk is replaced, so a hotplug/replacement or duplicate
+// identifier cannot leave a stale name mapping. A device reporting the same
+// fingerprint as last tick reuses its cached identity instead of re-reading
+// every sysfs attribute — on hosts exposing thousands of block devices (e.g.
+// sandboxes that see the host's nbd farm) that re-resolution dominated the
+// collector's CPU profile. Unresolved partition layouts are retried every tick.
 func (c *Collector) identifyDisks(disks map[string]diskRaw) {
-	type identity struct{ id, seq string }
-	parents := make(map[string]identity)
-	paths := make(map[string]string, len(disks))
-	parts := make(map[string]string)
-	counts := make(map[string]int)
+	parents := reuseMap(&c.diskParents)
+	paths := reuseMap(&c.diskPaths)
+	parts := reuseMap(&c.diskParts)
+	counts := reuseMap(&c.diskCounts)
+	// The identity cache is read throughout this function, so the per-tick
+	// rebuild writes into a swapped buffer instead of clearing the live map.
+	cache := reuseMap(&c.diskIDNext)
+
+	var fpBuf [fpBufSize]byte
 	for name := range disks {
 		base := filepath.Join(sysPath, "class", "block", name)
+		kind, payload := diskFingerprintBuf(base, fpBuf[:])
+		if cached, ok := c.diskIDCache[name]; ok && cached.basePath != "" &&
+			cached.fpKind == kind && string(payload) == cached.fpVal {
+			// Unchanged device: reuse the resolved identity and keep it in the
+			// duplicate detection so a peer (re)appearing with the same serial
+			// is still caught without re-reading every sysfs attribute.
+			if _, ok := parents[cached.basePath]; !ok {
+				seq := ""
+				if kind == fpDiskseq {
+					seq = cached.fpVal
+				}
+				parents[cached.basePath] = diskParent{cached.baseID, seq}
+				if cached.baseID != "" {
+					counts[cached.baseID]++
+				}
+			}
+			paths[name] = cached.basePath
+			if cached.part != "" {
+				parts[name] = cached.part
+			}
+			cache[name] = cached // keep the entry: cache is rebuilt every tick
+			continue
+		}
 		if part := readSysfsFile(filepath.Join(base, "partition")); part != "" {
 			// A partition's real sysfs directory is nested beneath its disk.
 			resolved, err := filepath.EvalSymlinks(base)
@@ -73,21 +175,28 @@ func (c *Collector) identifyDisks(disks map[string]diskRaw) {
 				base = filepath.Dir(resolved)
 				parts[name] = strconv.FormatUint(n, 10)
 			} else {
-				continue
+				continue // identity stays empty; retried on the next tick
 			}
 		} else if isPartition(name) {
 			// Missing partition metadata must never turn into a parent disk ID.
-			continue
+			continue // identity stays empty; retried on the next tick
 		} else if resolved, err := filepath.EvalSymlinks(base); err == nil {
 			base = resolved
 		}
 		paths[name] = base
 		if _, ok := parents[base]; !ok {
 			id := resolveDiskID(base)
-			parents[base] = identity{id, readSysfsFile(filepath.Join(base, "diskseq"))}
+			parents[base] = diskParent{id, readSysfsFile(filepath.Join(base, "diskseq"))}
 			if id != "" {
 				counts[id]++
 			}
+		}
+		cache[name] = diskIdentity{
+			fpKind:   kind,
+			fpVal:    string(payload),
+			baseID:   parents[base].id,
+			part:     parts[name],
+			basePath: base,
 		}
 	}
 	for name, raw := range disks {
@@ -103,6 +212,9 @@ func (c *Collector) identifyDisks(disks map[string]diskRaw) {
 		}
 		disks[name] = raw
 	}
+	// Swap buffers: the freshly rebuilt cache becomes the read side; the
+	// previous one is cleared and reused as next tick's write buffer.
+	c.diskIDCache, c.diskIDNext = cache, c.diskIDCache
 }
 
 func diskAttribute(base, attribute string) string {
