@@ -6,7 +6,7 @@
    button and driven by monitor.js.
    ============================================================ */
 'use strict';
-import { createMonitorPage, buildTable, buildSelect, buildSearch, node } from './monitor.js';
+import { createMonitorPage, buildTable, buildSelect, buildSearch, toggledSort, sortRows, node } from './monitor.js';
 import { i18n } from './i18n.js';
 
 const protocolOrder = ['tcp', 'tcp6', 'udp', 'udp6'];
@@ -19,17 +19,32 @@ let query = '';
 let protoFilter = '';
 let stateFilter = '';
 let filtersBuilt = false;
+// Empty key = the default grouping (protocol, then local port). Clicking the
+// process header sorts by owner instead.
+let sort = { key: '', dir: 'asc' };
+
+const comparators = {
+    process: (a, b) => String(a.process || '').localeCompare(String(b.process || '')),
+};
+
+const defaultOrder = (a, b) => protocolOrder.indexOf(a.proto) - protocolOrder.indexOf(b.proto) ||
+    (a.local_port || 0) - (b.local_port || 0);
 
 const stateLabel = state => i18n.t(`conn_state_${state}`);
 const protoLabel = proto => i18n.t(`monitor_proto_${proto}`);
 
 const endpoint = (address, port) => `${address || '—'}:${port}`;
 
+function onSort(key) {
+    sort = toggledSort(sort, key, columns());
+    renderTable();
+}
+
 function columns() {
     return [
         { label: i18n.t('monitor_proto'), value: c => protoLabel(c.proto) },
         { label: i18n.t('monitor_pid'), numeric: true, value: c => c.pid || '—' },
-        { label: i18n.t('monitor_process'), value: c => c.process || '—' },
+        { key: 'process', label: i18n.t('monitor_process'), value: c => c.process || '—', sortable: true, defaultDir: 'asc' },
         { label: i18n.t('monitor_local'), value: c => endpoint(c.local_addr, c.local_port) },
         { label: i18n.t('monitor_remote'), value: c => endpoint(c.remote_addr, c.remote_port) },
         { label: i18n.t('monitor_state'), value: c => stateLabel(c.state) },
@@ -38,7 +53,7 @@ function columns() {
 
 function visibleRows() {
     const term = query.trim().toLowerCase();
-    return (latest?.connections || []).filter(c => {
+    const rows = (latest?.connections || []).filter(c => {
         if (protoFilter && c.proto !== protoFilter) return false;
         if (stateFilter && c.state !== stateFilter) return false;
         if (!term) return true;
@@ -48,8 +63,9 @@ function visibleRows() {
             String(c.remote_port || '').includes(term) ||
             String(c.local_addr || '').includes(term) ||
             String(c.remote_addr || '').includes(term);
-    }).sort((a, b) => protocolOrder.indexOf(a.proto) - protocolOrder.indexOf(b.proto) ||
-        (a.local_port || 0) - (b.local_port || 0));
+    });
+    if (!comparators[sort.key]) return rows.sort(defaultOrder);
+    return sortRows(rows, sort, comparators, defaultOrder);
 }
 
 function buildFilters() {
@@ -74,7 +90,7 @@ function renderTable() {
     const count = node('p', 'monitor-count',
         `${i18n.t('monitor_rows')} ${shown.length}${rows.length > shown.length ? ` / ${rows.length}` : ''}`);
     const wrap = node('div', 'monitor-table-wrap');
-    wrap.append(buildTable(columns(), shown));
+    wrap.append(buildTable(columns(), shown, { sort, onSort }));
     content.replaceChildren(count, wrap);
 }
 

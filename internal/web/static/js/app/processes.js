@@ -6,7 +6,7 @@
    the header button and driven by monitor.js.
    ============================================================ */
 'use strict';
-import { createMonitorPage, buildTable, buildSelect, buildSearch, node, bytes, formatTime } from './monitor.js';
+import { createMonitorPage, buildTable, buildSelect, buildSearch, toggledSort, sortRows, node, bytes, formatTime } from './monitor.js';
 import { i18n } from './i18n.js';
 
 const processStates = ['running', 'sleeping', 'idle', 'disk_sleep', 'zombie', 'stopped', 'paging', 'parked', 'dead', 'unknown'];
@@ -16,18 +16,32 @@ let latest = null;
 let query = '';
 let stateFilter = '';
 let filtersBuilt = false;
+// Metrics start descending so the busiest process is on top; the name column
+// starts ascending, which is what a reader expects from "sort by name".
+let sort = { key: 'cpu_pct', dir: 'desc' };
+
+const comparators = {
+    name: (a, b) => String(a.name || '').localeCompare(String(b.name || '')),
+    cpu_pct: (a, b) => (a.cpu_pct || 0) - (b.cpu_pct || 0),
+    mem_rss: (a, b) => (a.mem_rss || 0) - (b.mem_rss || 0),
+};
 
 const stateLabel = state => i18n.t(`monitor_state_${state}`);
+
+function onSort(key) {
+    sort = toggledSort(sort, key, columns());
+    renderTable();
+}
 
 function columns() {
     return [
         { label: i18n.t('monitor_pid'), numeric: true, value: p => p.pid },
-        { label: i18n.t('monitor_name'), value: p => p.name || '—' },
+        { key: 'name', label: i18n.t('monitor_name'), value: p => p.name || '—', sortable: true, defaultDir: 'asc' },
         { label: i18n.t('monitor_ppid'), numeric: true, value: p => p.ppid },
         { label: i18n.t('monitor_threads'), numeric: true, value: p => p.threads },
         { label: i18n.t('monitor_user'), value: p => p.user || '—' },
-        { label: 'CPU', numeric: true, value: p => `${(p.cpu_pct || 0).toFixed(1)}%` },
-        { label: i18n.t('monitor_memory'), numeric: true, value: p => bytes(p.mem_rss) },
+        { key: 'cpu_pct', label: 'CPU', numeric: true, value: p => `${(p.cpu_pct || 0).toFixed(1)}%`, sortable: true, defaultDir: 'desc' },
+        { key: 'mem_rss', label: i18n.t('monitor_memory'), numeric: true, value: p => bytes(p.mem_rss), sortable: true, defaultDir: 'desc' },
         { label: i18n.t('monitor_conns'), numeric: true, value: p => p.sockets },
         { label: i18n.t('monitor_state'), value: p => stateLabel(p.state) },
         { label: i18n.t('monitor_started'), value: p => formatTime(p.started) },
@@ -36,13 +50,14 @@ function columns() {
 
 function visibleRows() {
     const term = query.trim().toLowerCase();
-    return (latest?.processes || []).filter(p => {
+    const rows = (latest?.processes || []).filter(p => {
         if (stateFilter && p.state !== stateFilter) return false;
         if (!term) return true;
         return String(p.pid).includes(term) ||
             String(p.name || '').toLowerCase().includes(term) ||
             String(p.user || '').toLowerCase().includes(term);
-    }).sort((a, b) => (b.cpu_pct || 0) - (a.cpu_pct || 0) || a.pid - b.pid);
+    });
+    return sortRows(rows, sort, comparators, (a, b) => a.pid - b.pid);
 }
 
 function buildFilters() {
@@ -65,7 +80,7 @@ function renderTable() {
     const count = node('p', 'monitor-count',
         `${i18n.t('monitor_rows')} ${shown.length}${rows.length > shown.length ? ` / ${rows.length}` : ''}`);
     const wrap = node('div', 'monitor-table-wrap');
-    wrap.append(buildTable(columns(), shown));
+    wrap.append(buildTable(columns(), shown, { sort, onSort }));
     content.replaceChildren(count, wrap);
 }
 

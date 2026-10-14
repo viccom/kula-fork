@@ -4808,6 +4808,53 @@ html.a11y-focus-outline :focus-visible {
     font-variant-numeric: tabular-nums;
 }
 
+/* ---- Sortable headers ---- */
+
+.monitor-table th.is-sortable {
+    padding: 0;
+}
+
+.monitor-sort {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    width: 100%;
+    padding: 0.5rem 0.75rem;
+    color: inherit;
+    background: transparent;
+    border: 0;
+    font: inherit;
+    font-size: 0.7rem;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    white-space: nowrap;
+    cursor: pointer;
+}
+
+.monitor-table th.is-numeric .monitor-sort {
+    justify-content: flex-end;
+}
+
+.monitor-sort:hover {
+    color: var(--text-primary);
+}
+
+.monitor-sort-ind {
+    font-size: 0.65rem;
+    opacity: 0.5;
+}
+
+.monitor-table th[aria-sort="ascending"] .monitor-sort,
+.monitor-table th[aria-sort="descending"] .monitor-sort {
+    color: var(--accent-blue);
+}
+
+.monitor-table th[aria-sort="ascending"] .monitor-sort-ind,
+.monitor-table th[aria-sort="descending"] .monitor-sort-ind {
+    opacity: 1;
+}
+
 /* ---- Disk usage cards (system-info overview) ---- */
 
 .system-info-disk-cards {

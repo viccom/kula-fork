@@ -34,14 +34,31 @@ export function formatTime(seconds) {
 }
 
 // buildTable renders a header row and body rows from a column spec. Columns
-// with numeric:true get a right-aligned numeric cell.
-export function buildTable(columns, rows) {
+// with numeric:true get a right-aligned numeric cell. A column marked
+// sortable:true renders its header as a button that calls onSort(key); the
+// active column and direction are exposed through aria-sort so assistive
+// technology reports the table's ordering too.
+export function buildTable(columns, rows, { sort, onSort } = {}) {
     const table = node('table', 'monitor-table');
     const thead = node('thead');
     const headRow = node('tr');
     for (const column of columns) {
-        const th = node('th', column.numeric ? 'is-numeric' : '', column.label);
+        const th = node('th', column.numeric ? 'is-numeric' : '');
         th.scope = 'col';
+        if (column.sortable && onSort) {
+            const active = !!sort && sort.key === column.key;
+            const ascending = active && sort.dir === 'asc';
+            th.classList.add('is-sortable');
+            th.setAttribute('aria-sort', active ? (ascending ? 'ascending' : 'descending') : 'none');
+            const button = node('button', 'monitor-sort');
+            button.type = 'button';
+            button.append(node('span', '', column.label));
+            button.append(node('span', 'monitor-sort-ind', active ? (ascending ? '▲' : '▼') : '↕'));
+            button.addEventListener('click', () => onSort(column.key));
+            th.append(button);
+        } else {
+            th.textContent = column.label;
+        }
         headRow.append(th);
     }
     thead.append(headRow);
@@ -56,6 +73,26 @@ export function buildTable(columns, rows) {
     }
     table.append(thead, tbody);
     return table;
+}
+
+// toggledSort returns the next sort state when a header is clicked: the same
+// column flips direction, a new column starts in its declared default
+// direction (descending for metrics, ascending for names).
+export function toggledSort(current, key, columns) {
+    if (current && current.key === key) {
+        return { key, dir: current.dir === 'asc' ? 'desc' : 'asc' };
+    }
+    const column = columns.find(c => c.key === key);
+    return { key, dir: column && column.defaultDir ? column.defaultDir : 'asc' };
+}
+
+// sortRows orders rows by the comparator registered for sort.key; a stable
+// tie-break keeps equal values in their previous order.
+export function sortRows(rows, sort, comparators, tieBreak) {
+    if (!sort || !sort.key || !comparators[sort.key]) return rows;
+    const compare = comparators[sort.key];
+    const direction = sort.dir === 'asc' ? 1 : -1;
+    return rows.sort((a, b) => direction * compare(a, b) || (tieBreak ? tieBreak(a, b) : 0));
 }
 
 // buildSelect creates a labelled <select> whose options are value/label pairs.
