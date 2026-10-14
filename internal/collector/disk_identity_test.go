@@ -230,3 +230,48 @@ func TestDiskIdentityCacheSurvivesRebuild(t *testing.T) {
 		t.Fatalf("cache entry lost on per-tick rebuild (identity cache never engages): %+v", c.diskIDCache)
 	}
 }
+
+// TestIdentifyDisksResolvesOnlySelectedNames covers the name-only fast path:
+// when every configured selector is a plain kernel name that is present, only
+// the selected devices touch sysfs. On hosts that expose thousands of block
+// devices that skip is what keeps the collector off the CPU profile.
+func TestIdentifyDisksResolvesOnlySelectedNames(t *testing.T) {
+	stage := func(devices []string, stats string) *Collector {
+		c := diskTestEnvironment(t)
+		diskTestFile(t, sysPath, "class/block/vda/device/serial", "A")
+		diskTestFile(t, sysPath, "class/block/vdb/device/serial", "B")
+		diskTestFile(t, procPath, "diskstats", stats)
+		c.collCfg.Devices = devices
+		return c
+	}
+
+	c := stage([]string{"vda"}, diskStatsLine("vda", 10)+diskStatsLine("vdb", 20))
+	raw := c.parseDiskStats()
+	if len(raw) != 1 || raw["vda"].id != "serial:||A" {
+		t.Fatalf("selected device not resolved: %+v", raw)
+	}
+	if _, resolved := c.diskIDCache["vdb"]; resolved {
+		t.Fatal("unselected device was resolved despite a name-only selection")
+	}
+
+	// An id selector cannot be decided by name, so every candidate must be
+	// resolved before filtering — this is the correctness fallback.
+	c = stage([]string{"serial:||B"}, diskStatsLine("vda", 10)+diskStatsLine("vdb", 20))
+	raw = c.parseDiskStats()
+	if len(raw) != 1 || raw["vdb"].id != "serial:||B" {
+		t.Fatalf("id selection failed: %+v", raw)
+	}
+	if _, resolved := c.diskIDCache["vda"]; !resolved {
+		t.Fatal("id selection must resolve every candidate before filtering")
+	}
+
+	// A selected name that is absent keeps the full path until it appears, then
+	// is resolved on the tick it shows up.
+	c = stage([]string{"vda", "vdb"}, diskStatsLine("vda", 10))
+	c.parseDiskStats()
+	diskTestFile(t, procPath, "diskstats", diskStatsLine("vda", 10)+diskStatsLine("vdb", 20))
+	raw = c.parseDiskStats()
+	if len(raw) != 2 || raw["vda"].id != "serial:||A" || raw["vdb"].id != "serial:||B" {
+		t.Fatalf("hotplugged device not resolved: %+v", raw)
+	}
+}

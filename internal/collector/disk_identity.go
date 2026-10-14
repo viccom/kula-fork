@@ -134,6 +134,43 @@ type diskParent struct{ id, seq string }
 // sandboxes that see the host's nbd farm) that re-resolution dominated the
 // collector's CPU profile. Unresolved partition layouts are retried every tick.
 func (c *Collector) identifyDisks(disks map[string]diskRaw) {
+	c.identifyDisksResolving(disks, c.selectionSubset(disks))
+}
+
+// selectionSubset returns the devices whose sysfs identity actually has to be
+// resolved this tick, or nil to resolve every candidate.
+//
+// When every configured selector is a plain kernel name that is present in the
+// current device list, the selection can be decided by name alone: only those
+// devices need a persistent identity, and the rest are left untouched. That
+// skip is what keeps the collector cheap on hosts that expose a very large
+// number of block devices, where fingerprinting every candidate every tick was
+// the dominant cost. A newly attached selected name is still resolved on the
+// tick it first appears, because the selector is matched against that same
+// device list.
+//
+// Any selector that is not a present device name may be a persistent id
+// (serial:/wwid:/…) or a not-yet-attached device, so the full path is kept:
+// id selectors must resolve candidates before they can be matched, and a
+// delayed device is picked up when it shows up. Auto-discovery (no selectors)
+// monitors every device, so it cannot skip any either.
+func (c *Collector) selectionSubset(disks map[string]diskRaw) map[string]bool {
+	if len(c.collCfg.Devices) == 0 {
+		return nil
+	}
+	subset := make(map[string]bool, len(c.collCfg.Devices))
+	for _, want := range c.collCfg.Devices {
+		if _, present := disks[want]; !present {
+			return nil
+		}
+		subset[want] = true
+	}
+	return subset
+}
+
+// identifyDisksResolving resolves identities for every device in disks, or only
+// those in subset when it is non-nil (name-only selection).
+func (c *Collector) identifyDisksResolving(disks map[string]diskRaw, subset map[string]bool) {
 	parents := reuseMap(&c.diskParents)
 	paths := reuseMap(&c.diskPaths)
 	parts := reuseMap(&c.diskParts)
@@ -144,6 +181,9 @@ func (c *Collector) identifyDisks(disks map[string]diskRaw) {
 
 	var fpBuf [fpBufSize]byte
 	for name := range disks {
+		if subset != nil && !subset[name] {
+			continue // not selected by name; identity stays empty without touching sysfs
+		}
 		base := filepath.Join(sysPath, "class", "block", name)
 		kind, payload := diskFingerprintBuf(base, fpBuf[:])
 		if cached, ok := c.diskIDCache[name]; ok && cached.basePath != "" &&
@@ -200,6 +240,9 @@ func (c *Collector) identifyDisks(disks map[string]diskRaw) {
 		}
 	}
 	for name, raw := range disks {
+		if subset != nil && !subset[name] {
+			continue
+		}
 		info := parents[paths[name]]
 		raw.diskseq = info.seq
 		if info.id != "" && counts[info.id] == 1 {
