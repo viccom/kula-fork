@@ -12,6 +12,7 @@
 import { apiUrl } from './api.js';
 import { i18n } from './i18n.js';
 import { formatBytesShort } from './format.js';
+import { openPage, registerPage } from './pages.js';
 
 const pollInterval = 3000;
 
@@ -146,24 +147,13 @@ export function createMonitorPage({ page, button, back, refresh, status, content
         }
     }
 
-    // closeSiblings makes the monitor pages mutually exclusive and closes the
-    // system-info page by reusing its own toggle, so only one full-screen view
-    // is ever mounted.
-    function closeSiblings() {
-        for (const other of document.querySelectorAll('.monitor-page')) {
-            if (other.id !== page) other.classList.add('hidden');
-        }
-        for (const btn of document.querySelectorAll('.btn-monitor')) {
-            if (btn.id !== button) btn.setAttribute('aria-expanded', 'false');
-        }
-        const info = el('system-info-page');
-        if (info && !info.classList.contains('hidden')) el('btn-info')?.click();
-    }
-
+    // show mounts the page, releasing every other full-screen page through the
+    // shared registry first so only one is ever visible.
     function show({ pushRoute = true } = {}) {
         if (!enabled || isOpen()) return;
         dashboardScroll = window.scrollY;
-        closeSiblings();
+        // Only one full-screen page may be mounted; release every other page.
+        openPage(page);
         el('dashboard')?.classList.add('monitor-active');
         el('dashboard-home')?.classList.add('hidden');
         pageEl()?.classList.remove('hidden');
@@ -194,11 +184,13 @@ export function createMonitorPage({ page, button, back, refresh, status, content
     }
 
     function init() {
+        registerPage(page, {
+            isOpen,
+            close: () => hide({ useHistory: false, restoreScroll: false }),
+        });
         el(button)?.addEventListener('click', () => isOpen() ? hide() : show());
         el(back)?.addEventListener('click', () => hide());
         el(refresh)?.addEventListener('click', refreshNow);
-        // Opening system-info on top of a monitor page closes the monitor page.
-        el('btn-info')?.addEventListener('click', () => { if (isOpen()) hide({ useHistory: false, restoreScroll: false }); });
         window.addEventListener('hashchange', () => {
             if (window.location.hash === route && enabled) show({ pushRoute: false });
             else if (isOpen()) hide({ useHistory: false });

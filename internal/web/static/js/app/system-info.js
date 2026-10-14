@@ -7,6 +7,7 @@
 import { apiUrl } from './api.js';
 import { i18n } from './i18n.js';
 import { formatBytesShort } from './format.js';
+import { openPage, registerPage } from './pages.js';
 
 const sectionDefinitions = [
     { id: 'overview', icon: 'server' },
@@ -1272,6 +1273,8 @@ export function showSystemInfo({ pushRoute = true, focusTitle = true } = {}) {
     if (!enabled) return;
     const firstOpen = !pageIsOpen();
     if (firstOpen) dashboardScroll = window.scrollY;
+    // Only one full-screen page may be mounted; release the monitors first.
+    openPage('system-info');
     el('dashboard-home')?.classList.add('hidden');
     el('dashboard-home')?.setAttribute('aria-hidden', 'true');
     el('dashboard-home')?.setAttribute('inert', '');
@@ -1339,6 +1342,10 @@ async function refresh() {
 
 export function initSystemInfo() {
     tabs();
+    registerPage('system-info', {
+        isOpen: pageIsOpen,
+        close: () => hideSystemInfo({ restoreScroll: false }),
+    });
     el('btn-info').addEventListener('click', () => pageIsOpen() ? closeSystemInfo() : showSystemInfo());
     el('system-info-back').addEventListener('click', () => closeSystemInfo());
     el('system-info-refresh').addEventListener('click', refresh);
